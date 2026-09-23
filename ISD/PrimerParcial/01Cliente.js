@@ -5,7 +5,7 @@ El problema es como apuntar al backend */
 const API_URL = "https://proyectobackcecyt9.onrender.com";  //Esto cambia segun la URL del Backend 
 
 async function main(){
-    console.log(`Cliente Petición GET -> a ${API_URL}/api/talleres`);
+    console.log(`Cliente Petición GET -> a ${API_URL}/api/talleres`); //Petición a la API o Empoint (ruta a la que se pretenece)
     const inicio = Date.now();
     const response = await fetch(`${API_URL}/api/talleres`);
     const duracióon = Date.now() - inicio;
@@ -16,3 +16,4 @@ async function main(){
     console.log("Tiempo de ida y vuelta (RTT): ${duracionMs} ms");
     console.log(JSON.stringify(cuerpo, null, 2));
  }
+ main();
