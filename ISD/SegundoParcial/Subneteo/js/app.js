@@ -1,225 +1,218 @@
+// Interfaz de la calculadora. Toda la lógica de cálculo vive en subneteo.js.
+
 (function () {
-    'use strict';
+  'use strict';
+  const S = window.Subneteo;
+  const $ = (id) => document.getElementById(id);
 
-    const S = window.Subneteo;
-    const $ = (id) => document.getElementById(id);
+  // Evita que un nombre escrito por el usuario se interprete como HTML
+  function escapar(texto) {
+    return String(texto).replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[c]);
+  }
 
-    if (!S) {
-        throw new Error('Subneteo no está cargado.');
+  const formatoMiles = (n) => n.toLocaleString('es-MX');
+
+  function mostrarError(destino, error) {
+    destino.innerHTML = `<div class="error">⚠ ${escapar(error.message)}</div>`;
+  }
+
+  // IP en binario con los bits de red en azul y los de host en naranja
+  function binarioColoreado(ip, prefijo) {
+    const bits = S.ipABinario(ip).replace(/\./g, '');
+    let html = '';
+    for (let i = 0; i < 32; i++) {
+      if (i > 0 && i % 8 === 0) html += '.';
+      html += `<span class="${i < prefijo ? 'bits-red' : 'bits-host'}">${bits[i]}</span>`;
     }
+    return html;
+  }
 
-    function escapar(texto) {
-        return String(texto).replace(/[&<>"']/g, (c) => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#39;'
-        })[c]);
-    }
+  function tarjetaRedBase(ip, prefijo) {
+    const clase = S.claseDeRed(ip);
+    return `
+      <div class="tarjeta">
+        <h3>Red base ${escapar(ip)}/${prefijo}</h3>
+        <dl class="datos">
+          <div><dt>Clase (histórica)</dt><dd>${clase.clase}${clase.prefijoPorDefecto ? ` · /${clase.prefijoPorDefecto} por defecto` : ''}</dd></div>
+          <div><dt>Tipo</dt><dd>${S.esPrivada(ip) ? 'Privada (RFC 1918)' : 'Pública'}</dd></div>
+          <div><dt>Máscara</dt><dd>${S.prefijoAMascara(prefijo)}</dd></div>
+          <div><dt>Direcciones en total</dt><dd>${formatoMiles(2 ** (32 - prefijo))}</dd></div>
+        </dl>
+        <p class="binario">IP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${binarioColoreado(ip, prefijo)}</p>
+        <p class="binario">Máscara ${binarioColoreado(S.prefijoAMascara(prefijo), prefijo)}</p>
+        <p class="leyenda"><span class="bits-red">Azul</span> = bits de red · <span class="bits-host">naranja</span> = bits de host</p>
+      </div>`;
+  }
 
-    const formatoMiles = (n) => Number(n).toLocaleString('es-MX');
+  function tablaSubredes(subredes, conSolicitados) {
+    const filas = subredes.map((s, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${escapar(s.nombre)}</td>
+        ${conSolicitados ? `<td>${formatoMiles(s.hostsSolicitados)}</td>` : ''}
+        <td class="ip">${s.red}/${s.prefijo}</td>
+        <td class="ip">${s.mascara}</td>
+        <td class="ip">${s.primerHost}</td>
+        <td class="ip">${s.ultimoHost}</td>
+        <td class="ip">${s.broadcast}</td>
+        <td>${formatoMiles(s.hosts)}</td>
+      </tr>`).join('');
+    return `
+      <div class="tabla-envoltura">
+        <table class="resultado">
+          <thead><tr>
+            <th>#</th><th>Subred</th>${conSolicitados ? '<th>Hosts pedidos</th>' : ''}
+            <th>Red</th><th>Máscara</th><th>Primer host</th><th>Último host</th><th>Broadcast</th><th>Hosts útiles</th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>`;
+  }
 
-    function mostrarError(destino, error) {
-        if (!destino) return;
-        const mensaje = error && error.message ? error.message : String(error);
-        destino.innerHTML = `<div class="error">!${escapar(mensaje)}</div>`;
-    }
+  // ---------- Pestañas ----------
 
-    function binarioColorado(ip, prefijo) {
-        const bits = S.ipABinario(ip).replace(/\./g, '');
-        let html = '';
+  document.querySelectorAll('.pestana').forEach((boton) => {
+    boton.addEventListener('click', () => activarPanel(boton.dataset.panel));
+  });
 
-        for (let i = 0; i < 32; i++) {
-            if (i > 0 && i % 8 === 0) html += '.';
-            html += `<span class="${i < prefijo ? 'bits-red' : 'bits-hosts'}">${bits[i] ?? '0'}</span>`;
-        }
+  function activarPanel(id) {
+    document.querySelectorAll('.pestana').forEach((b) => b.classList.toggle('activa', b.dataset.panel === id));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('activo', p.id === id));
+  }
 
-        return html;
-    }
+  // ---------- Conversor ----------
 
-    function tarjetaRedBase(ip, prefijo) {
-        const clase = S.claseDeRed(ip);
+  $('form-binario').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const destino = $('bin-resultado');
+    try {
+      const entrada = $('bin-entrada').value.trim();
+      const octetos = entrada.includes('.')
+        ? S.enteroAIp(S.ipAEntero(entrada)).split('.').map(Number)
+        : [Number(entrada)];
+      if (octetos.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
+        throw new Error('Escribe un número entre 0 y 255 o una IP válida');
+      }
+      destino.innerHTML = octetos.map((o) => {
+        const pasos = S.pasosDecimalABinario(o);
         return `
-            <div class="tarjeta">
-                <h3>Red Base ${escapar(ip)}/${prefijo}</h3>
-
-                <div class="datos">
-                    <div>
-                        <dt>Clase (Histórica)</dt>
-                        <dd>
-                            ${clase.clase}${clase.prefijo ? `/${clase.prefijo} por defecto` : ''}
-                        </dd>
-                    </div>
-
-                    <div>
-                        <dt>Tipo</dt>
-                        <dd>
-                            ${S.esPrivada(ip) ? 'Privada' : 'Pública'}
-                        </dd>
-                    </div>
-
-                    <div>
-                        <dt>Máscara</dt>
-                        <dd>
-                            ${S.prefijoAMascara(prefijo)}
-                        </dd>
-                    </div>
-
-                    <div>
-                        <dt>Direcciones en total</dt>
-                        <dd>
-                            ${formatoMiles(2 ** (32 - prefijo))}
-                        </dd>
-                    </div>
-                </div>
-
-                <p class="binario">
-                    IP:&nbsp;&nbsp;&nbsp;&nbsp;
-                    ${binarioColorado(ip, prefijo)}
-                </p>
-
-                <p class="binario">
-                    Máscara:&nbsp;
-                    ${binarioColorado(S.prefijoAMascara(prefijo), prefijo)}
-                </p>
-            </div>
-        `;
+          <div class="tarjeta">
+            <h3>${o} → <span class="binario">${S.octetoABinario(o)}</span></h3>
+            <table class="pasos">
+              <tr><th>Peso</th>${pasos.map((p) => `<th>${p.peso}</th>`).join('')}</tr>
+              <tr><td>Bit</td>${pasos.map((p) => `<td>${p.bit}</td>`).join('')}</tr>
+              <tr><td>Resto</td>${pasos.map((p) => `<td>${p.resto}</td>`).join('')}</tr>
+            </table>
+            <p class="leyenda">Si el número (o lo que resta) alcanza para el peso, se pone 1 y se resta; si no, se pone 0.</p>
+          </div>`;
+      }).join('');
+    } catch (err) {
+      mostrarError(destino, err);
     }
+  });
 
-    function tablaSubredes(subredes, conSolicitados) {
-        const filas = subredes.map((s, i) => `
-            <tr>
-                <td>${i + 1}</td>
-                <td>${escapar(s.nombre || 'Subred')}</td>
-                ${conSolicitados ? `<td>${formatoMiles(s.hostsSolicitados ?? s.hosts)}</td>` : ''}
-                <td class="ip">${escapar(`${s.red}/${s.prefijo}`)}</td>
-                <td class="ip">${escapar(s.mascara)}</td>
-                <td class="ip">${escapar(s.primerHost)}</td>
-                <td class="ip">${escapar(s.ultimoHost)}</td>
-                <td class="ip">${escapar(s.broadcast)}</td>
-                <td>${formatoMiles(s.hosts)}</td>
-            </tr>
-        `).join('');
+  // ---------- FLSM ----------
 
-        return `
-            <div class="tabla-envoltura">
-                <table class="resultado">
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Subred</th>
-                            ${conSolicitados ? '<th>Hosts solicitados</th>' : ''}
-                            <th>Red</th>
-                            <th>Máscara</th>
-                            <th>Primer host</th>
-                            <th>Último host</th>
-                            <th>Broadcast</th>
-                            <th>Hosts útiles</th>
-                        </tr>
-                    </thead>
-                    <tbody>${filas}</tbody>
-                </table>
-            </div>
-        `;
+  $('form-flsm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const destino = $('flsm-resultado');
+    try {
+      const ip = $('flsm-red').value.trim();
+      const prefijo = S.leerPrefijo($('flsm-prefijo').value);
+      const cantidad = Number($('flsm-cantidad').value);
+      const r = S.subnetearFLSM(ip, prefijo, { [$('flsm-modo').value]: cantidad });
+      destino.innerHTML = tarjetaRedBase(ip, prefijo) + `
+        <div class="tarjeta">
+          <h3>Resultado</h3>
+          <dl class="datos">
+            <div><dt>Bits prestados</dt><dd>${r.bitsPrestados} (2^${r.bitsPrestados} = ${r.totalSubredes} subredes)</dd></div>
+            <div><dt>Nuevo prefijo</dt><dd>/${r.nuevoPrefijo} · ${S.prefijoAMascara(r.nuevoPrefijo)}</dd></div>
+            <div><dt>Hosts útiles por subred</dt><dd>2^${32 - r.nuevoPrefijo} − 2 = ${formatoMiles(r.hostsPorSubred)}</dd></div>
+            <div><dt>Salto entre subredes</dt><dd>${formatoMiles(r.subredes[0].tamanoBloque)} direcciones</dd></div>
+          </dl>
+        </div>
+        <div class="tarjeta">${tablaSubredes(r.subredes, false)}</div>`;
+    } catch (err) {
+      mostrarError(destino, err);
     }
+  });
 
-    document.querySelectorAll('.pestana').forEach((boton) => {
-        boton.addEventListener('click', () => activarPanel(boton.dataset.panel));
-    });
+  // ---------- VLSM ----------Tarea
 
-    function activarPanel(id) {
-        document.querySelectorAll('.pestana').forEach((b) => {
-            b.classList.toggle('activa', b.dataset.panel === id);
-        });
+  // ---------- ¿A qué red pertenece? ----------
 
-        document.querySelectorAll('.panel').forEach((p) => {
-            p.classList.toggle('activo', p.id === id);
-        });
+  $('form-ip').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const destino = $('ip-resultado');
+    try {
+      const ip = $('ip-dir').value.trim();
+      const prefijo = S.leerPrefijo($('ip-prefijo').value);
+      const s = S.analizarIp(ip, prefijo);
+      destino.innerHTML = `
+        <div class="tarjeta">
+          <h3>${escapar(ip)}/${prefijo}</h3>
+          <p class="binario">IP&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${binarioColoreado(ip, prefijo)}</p>
+          <p class="binario">Máscara ${binarioColoreado(s.mascara, prefijo)}</p>
+          <p class="binario">Red&nbsp;&nbsp;&nbsp;&nbsp;${binarioColoreado(s.red, prefijo)} &nbsp;(IP AND máscara)</p>
+          <dl class="datos">
+            <div><dt>Red</dt><dd>${s.red}/${prefijo}</dd></div>
+            <div><dt>Primer host</dt><dd>${s.primerHost}</dd></div>
+            <div><dt>Último host</dt><dd>${s.ultimoHost}</dd></div>
+            <div><dt>Broadcast</dt><dd>${s.broadcast}</dd></div>
+            <div><dt>Hosts útiles</dt><dd>${formatoMiles(s.hosts)}</dd></div>
+          </dl>
+        </div>`;
+    } catch (err) {
+      mostrarError(destino, err);
     }
+  });
 
-    const formBinario = $('form-binario');
+  // ---------- Ejercicios de la hoja ----------
 
-    if (formBinario) {
-        formBinario.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const destino = $('bin-resultado');
+  const ejercicios = {
+    1: () => {
+      $('vlsm-red').value = '192.168.50.0';
+      $('vlsm-prefijo').value = '/24';
+      cargarFilas([['Laboratorio de Cómputo', 60], ['Sala de Maestros', 25], ['Control Escolar', 12],
+        ['Biblioteca', 5], ['Enlace R1-R2', 2], ['Enlace R2-R3', 2]]);
+      activarPanel('panel-vlsm');
+      $('form-vlsm').requestSubmit();
+    },
+    2: () => {
+      $('vlsm-red').value = '172.20.0.0';
+      $('vlsm-prefijo').value = '/16';
+      cargarFilas([['Campus Norte', 2000], ['Campus Sur', 1000], ['Administración', 500],
+        ['WiFi Visitantes', 200], ['Enlace Norte-Sur', 2]]);
+      activarPanel('panel-vlsm');
+      $('form-vlsm').requestSubmit();
+    },
+    3: () => {
+      $('flsm-red').value = '10.0.0.0';
+      $('flsm-prefijo').value = '/8';
+      $('flsm-modo').value = 'subredes';
+      $('flsm-cantidad').value = 16;
+      activarPanel('panel-flsm');
+      $('form-flsm').requestSubmit();
+    },
+  };
 
-            try {
-                const entrada = $('bin-entrada').value.trim();
-                if (!entrada) {
-                    throw new Error('Escribe un número o una IP válida');
-                }
+  function cargarFilas(lista) {
+    $('vlsm-filas').innerHTML = '';
+    lista.forEach(([nombre, hosts]) => agregarFila(nombre, hosts));
+  }
 
-                const octetos = entrada.includes('.')
-                    ? entrada.split('.').map((v) => Number(v.trim()))
-                    : [Number(entrada)];
+  document.querySelectorAll('[data-ejemplo]').forEach((b) => {
+    b.addEventListener('click', () => ejercicios[b.dataset.ejemplo]());
+  });
 
-                if (octetos.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
-                    throw new Error('Escribe un numero entre el 0 y el 255 o una IP valida');
-                }
+  // Estado inicial: filas del ejercicio 1 y conversión de ejemplo
+  cargarFilas([['Laboratorio de Cómputo', 60], ['Sala de Maestros', 25], ['Control Escolar', 12],
+    ['Biblioteca', 5], ['Enlace R1-R2', 2], ['Enlace R2-R3', 2]]);
+  $('form-binario').requestSubmit();
 
-                destino.innerHTML = octetos.map((o) => {
-                    const pasos = S.pasosDecimalABinario(o);
-                    return `
-                        <div class="tarjeta">
-                            <h3>${o} -> <span class="binario">${S.octetoABinario(o)}</span></h3>
-                            <table class="pasos">
-                                <tr>
-                                    <th>Peso</th>
-                                    ${pasos.map((p) => `<th>${p.peso}</th>`).join('')}
-                                    <th>Bit</th>
-                                    ${pasos.map((p) => `<th>${p.bit}</th>`).join('')}
-                                    <th>Resto</th>
-                                    ${pasos.map((p) => `<th>${p.resto}</th>`).join('')}
-                                </tr>
-                            </table>
-                            <p class="leyenda">Si el numero (o lo que resta) alcanza para el peso, se pone 1 y se resta, sino, se pone 0</p>
-                        </div>
-                    `;
-                }).join('');
-            } catch (err) {
-                mostrarError(destino, err);
-            }
-        });
-    }
-
-    //Aquí vemos a que tipo de red pertenece
-    $('form-ip').addEventListener('submit', (e) =>{
-        e.preventDefault();
-        const destino = $('ip-resultado');
-        try{
-            const ip = $('ip-dir').value.trim();
-            const prefijo = S.leerPrefijo($('ip-prefijo').value);
-            const s = S.analizarIP(ip, prefijo);
-
-            destino.innerHTML = ` 
-                <div class="tarjeta" >
-                    <h3>${escapar(ip)}/${prefijo}</h3>
-                    <p class="binario" >IP&nsbp;&nsbp;&nsbp;&nsbp;&nsbp;${binarioColorado(ip, prefijo)}</p>
-                    <p class="binario" >Mascara${binarioColorado(s.mascara, prefijo)}</p>
-                    <p class="binario" >Red&nsbp;&nsbp;&nsbp;&nsbp;&nsbp;${binarioColorado(s.red, prefijo)}</p>
-                    <div class="datos">
-                        <div>
-                            <dt>Red</dt><dd>${s.red}/${prefijo}</dd>
-                        </div>
-                        <div>
-                            <dt>Primer host</dt><dd>${s.primerHost}</dd>
-                        </div>
-                        <div>
-                            <dt>Ultimo host</dt><dd>${s.ultimoHost}</dd>
-                        </div>
-                        <div>
-                            <dt>Broadcast</dt><dd>${s.broadcast}</dd>
-                        </div>
-                        <div>
-                            <dt>Host utiles</dt><dd>${formatoMiles(S.hosts)}</dd>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }catch(err){
-            mostrarError(destino, err);
-        }
-    });
-})
+  // index.html#ejercicio=2 abre directamente ese ejercicio (útil para proyectar en clase)
+  const enlace = location.hash.match(/ejercicio=(\d)/);
+  if (enlace && ejercicios[enlace[1]]) ejercicios[enlace[1]]();
+})();
