@@ -139,7 +139,51 @@
     }
   });
 
-  // ---------- VLSM ----------Tarea
+  // ---------- VLSM ----------
+
+  function agregarFila(nombre = '', hosts = '') {
+    const fila = document.createElement('div');
+    fila.className = 'req-fila';
+    fila.innerHTML = `
+      <input type="text" class="vlsm-nombre" aria-label="Nombre del área o subred" placeholder="Nombre del área" value="${escapar(nombre)}" required>
+      <input type="number" class="vlsm-hosts" aria-label="Hosts requeridos" min="1" step="1" placeholder="Hosts" value="${escapar(hosts)}" required>
+      <button type="button" class="quitar" aria-label="Quitar subred">×</button>`;
+    fila.querySelector('.quitar').addEventListener('click', () => fila.remove());
+    $('vlsm-filas').append(fila);
+  }
+
+  $('vlsm-agregar').addEventListener('click', () => agregarFila());
+
+  $('form-vlsm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const destino = $('vlsm-resultado');
+    try {
+      const ip = $('vlsm-red').value.trim();
+      const prefijo = S.leerPrefijo($('vlsm-prefijo').value);
+      const requerimientos = [...$('vlsm-filas').querySelectorAll('.req-fila')].map((fila) => ({
+        nombre: fila.querySelector('.vlsm-nombre').value.trim(),
+        hosts: Number(fila.querySelector('.vlsm-hosts').value),
+      }));
+      const resultado = S.subnetearVLSM(ip, prefijo, requerimientos);
+      const porcentaje = resultado.direccionesTotales
+        ? (resultado.direccionesUsadas / resultado.direccionesTotales * 100).toFixed(1)
+        : '0.0';
+
+      destino.innerHTML = tarjetaRedBase(ip, prefijo) + `
+        <div class="tarjeta">
+          <h3>Resultado VLSM</h3>
+          <dl class="datos">
+            <div><dt>Subredes asignadas</dt><dd>${resultado.subredes.length}</dd></div>
+            <div><dt>Direcciones utilizadas</dt><dd>${formatoMiles(resultado.direccionesUsadas)} de ${formatoMiles(resultado.direccionesTotales)} (${porcentaje}%)</dd></div>
+            <div><dt>Direcciones libres</dt><dd>${formatoMiles(resultado.direccionesLibres)}</dd></div>
+            <div><dt>Primera dirección libre</dt><dd>${resultado.primerLibre || 'Ninguna'}</dd></div>
+          </dl>
+        </div>
+        <div class="tarjeta">${tablaSubredes(resultado.subredes, true)}</div>`;
+    } catch (err) {
+      mostrarError(destino, err);
+    }
+  });
 
   // ---------- ¿A qué red pertenece? ----------
 

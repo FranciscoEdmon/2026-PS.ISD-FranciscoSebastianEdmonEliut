@@ -98,7 +98,7 @@
             mascara : prefijoAMascara(prefijo),
             primerHost : enteroAIp(conHosts ? redEntero + 1 : redEntero),
             ultimoHost : enteroAIp(conHosts ? broadcast -1 : broadcast),
-            broadcast : enteroAIp(prefijo),
+            broadcast : enteroAIp(broadcast),
             hosts : hostsUtilizable(prefijo),
             tamanoBloque : tamano
         };
@@ -166,16 +166,32 @@
         const base = validarRedBase(ip, prefijo);
         const fin = base + 2**(32-prefijo);
         //ordenamos
-        const oredenados = requerimientos
-        .map((r, i)=>{({...r, i})})
-        .sort((a,b) => n.hosts - a.hosts || a.i - b.i);
+        if (!Array.isArray(requerimientos) || requerimientos.length === 0) {
+            throw new Error('Agrega al menos una subred con su cantidad de hosts');
+        }
+
+        const ordenados = requerimientos
+        .map((r, i) => {
+            const nombre = String(r.nombre || '').trim();
+            if (!nombre) throw new Error(`La subred ${i + 1} necesita un nombre`);
+            if (!Number.isInteger(r.hosts) || r.hosts < 1) {
+                throw new Error(`La cantidad de hosts de "${nombre}" debe ser un entero mayor que cero`);
+            }
+            return { ...r, nombre, i };
+        })
+        .sort((a, b) => b.hosts - a.hosts || a.i - b.i);
 
         let siguiente = base;
-        const subredes = oredenados.map((r)=>{
+        const subredes = ordenados.map((r) => {
             const bitsHosts = bitsParaHosts(r.hosts);
             const nuevoPrefijo = 32 - bitsHosts;
             if(nuevoPrefijo < prefijo){
-                throw new Error(`${nombre} (${r.hosts} hosts) necesita /${nuevoPrefijo}, mas grande que toda la red `);
+                throw new Error(`"${r.nombre}" (${r.hosts} hosts) necesita /${nuevoPrefijo}, más grande que la red base /${prefijo}`);
+            }
+            const tamano = 2 ** bitsHosts;
+            const inicio = Math.ceil(siguiente / tamano) * tamano;
+            if (inicio + tamano > fin) {
+                throw new Error(`No hay espacio suficiente para asignar "${r.nombre}" (${r.hosts} hosts) dentro de ${ip}/${prefijo}`);
             }
             siguiente = inicio + tamano;
             return { ...describirSubred(inicio, nuevoPrefijo, r.nombre), hostsSolicitados: r.hosts, bitsHosts };
@@ -185,7 +201,9 @@
         return{
             direccionesTotales : 2**(32-prefijo),
             direccionesUsadas : usadas,
-            primerLibre : siguiente < fin ? enteroAIp(siguiente):null
+            direccionesLibres : fin - siguiente,
+            primerLibre : siguiente < fin ? enteroAIp(siguiente):null,
+            subredes
         };
     }
 
