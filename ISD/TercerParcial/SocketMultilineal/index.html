@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <h1>Notificaciones Ejemplo</h1>
+    <p>Estado: <span id="estado" class="desconectado">Desconectado</span></p>
+    <p>Correo <code>node servidor.js</code> y en su terminal verde el estado del servidor. </p>
+    <ul id="lista"></ul>
+
+    <script>
+        const estado = document.getElementById('estado');
+        const lista = document.getElementById('lista');
+
+        //necesitamos un script con protocolo TCP un web socket es un socket con protocolo TCP
+        const socket = new WebSocket(`ws://${location.host}`);
+        socket.addEventListener('open', ()=>{
+            estado.textContent = 'conectado';
+            estado.className = 'conetcado';
+        });
+
+        socket.addEventListener('close', ()=>{
+            estado.textContent = 'desconectado';
+            estado.className = 'desconetcado';
+        });
+
+        socket.addEventListener('message', (event)=>{
+            const {tipo, mesnaje, fecha} = JSON.parse(evento.data);
+            const item = document.createElement('li');
+            item.innerHTML = `
+                <time>${new Date(fecha).toLocaleDateString()}</time> Tipo de Estado[${tipo}]Mensaje: ${mesnaje}
+                `;
+                lista.prepend(item);         //Prepend inserta el nodo antes del primer hijo mientras remplaza la cadena
+        });
+    </script>
+</body>
+</html>
