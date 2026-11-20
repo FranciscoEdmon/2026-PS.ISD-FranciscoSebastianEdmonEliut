@@ -21,24 +21,6 @@
       <button id="btn-refrescar" type="button">Volver a preguntar</button>
     </section>
 
-    <section class="tarjeta">
-      <h2>2 · Iniciar sesión</h2>
-      <form id="form-login">
-        <label>Usuario
-          <select id="usuario">
-            <option value="ana">ana (alumno)</option>
-            <option value="luis">luis (alumno)</option>
-            <option value="admin">admin (administrador)</option>
-          </select>
-        </label>
-        <label>Contraseña
-          <input id="contrasena" type="password" value="ana12345" autocomplete="off">
-        </label>
-        <button type="submit">Entrar</button>
-      </form>
-      <p class="detalle">Los usuarios están en la tabla <code>usuarios</code> de MySQL. Contraseñas: <code>ana12345</code>, <code>luis12345</code> y <code>admin12345</code>.</p>
-    </section>
-
     <section class="tarjeta" id="tarjeta-jwt">
       <h2>JWT · Token de acceso</h2>
       <p class="detalle">Inicia sesión con JWT, observa el token y úsalo como <code>Authorization: Bearer</code>. A diferencia de la cookie, el servidor no guarda una sesión para cada token; al renovar o cerrar sesión, el token anterior queda en la lista negra hasta que expire.</p>
@@ -53,7 +35,7 @@
         <label>Contraseña
           <input id="jwt-contrasena" type="password" value="ana12345" autocomplete="off">
         </label>
-        <button type="submit">Obtener token</button>
+        <button type="submit">Iniciar sesión con Token</button>
       </form>
       <p id="jwt-estado" class="estado sin-sesion">Sin token</p>
       <label>Token JWT

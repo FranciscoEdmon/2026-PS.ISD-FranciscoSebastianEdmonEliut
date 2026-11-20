@@ -196,17 +196,6 @@ async function actualizarTokensRevocados() {
   agregarBitacora('GET', '/api/jwt/revocados', resultado.status, resultado.datos);
 }
 
-// Impide la recarga del formulario y ejecuta el login con los datos escritos por el usuario.
-$('form-login').addEventListener('submit', async (evento) => {
-  evento.preventDefault();
-
-  const usuario = $('usuario').value;
-  const contrasena = $('contrasena').value;
-  const resultado = await llamar('POST', '/api/login', { usuario, contrasena });
-  agregarBitacora('POST', '/api/login', resultado.status, resultado.datos);
-  await refrescarTodo();
-});
-
 // El formulario JWT solicita un token independiente de la cookie de sesión de la demostración anterior.
 $('form-jwt-login').addEventListener('submit', async (evento) => {
   evento.preventDefault();
@@ -259,10 +248,7 @@ document.querySelectorAll('[data-jwt-metodo][data-jwt-url]').forEach((boton) => 
   });
 });
 
-// Actualiza la contraseña de ejemplo para evitar que el usuario tenga que escribirla al cambiar de usuario.
-$('usuario').addEventListener('change', (evento) => {
-  $('contrasena').value = `${evento.target.value}12345`;
-});
+// Actualiza la contraseña de ejemplo al cambiar el usuario JWT.
 $('jwt-usuario').addEventListener('change', (evento) => {
   $('jwt-contrasena').value = `${evento.target.value}12345`;
 });
