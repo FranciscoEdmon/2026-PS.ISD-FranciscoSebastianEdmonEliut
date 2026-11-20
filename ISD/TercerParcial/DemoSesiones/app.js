@@ -1,5 +1,4 @@
-// La aplicación de la demo. server.js la arranca; las pruebas la arrancan con otras configuraciones.
-// Lo que dice "(en clase)" lo programamos juntos, paso por paso. Mientras no esté, esa ruta responde 501.
+// Demo de autenticación con sesiones tradicionales y JWT.
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
@@ -7,9 +6,7 @@ const MySQLStore = require('express-mysql-session')(session);
 const { crearModeloUsuarios } = require('./modelos/usuarios.modelo');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
-const {crearModeloUsuarios} = require('./modelos/usuarios.modelo');
-const { config } = require('dotenv');
-const {crearModeloTokens} = requite('./modelos/tokens.modelo');
+const { crearModeloTokens } = require('./modelos/tokens.modelo');
 
 
 const NOMBRE_COOKIE = 'connect.sid';
@@ -28,6 +25,8 @@ function crearApp(config, pool){
   const app = express();
   app.use(express.json());
   const usuarios = crearModeloUsuarios(pool);
+  const tokens = crearModeloTokens(pool);
+  const secretoJWT = config.jwtSecreto || process.env.JWT_SECRET || 'secreto-jwt-solo-para-la-demo';
 
   //necesito crear una sesión a partir del tipo, rol y privilegio del usuario
   //opcion 1 manejorlo desde mysql, significa que debo de tener una tabla de sesiones
@@ -44,11 +43,11 @@ function crearApp(config, pool){
       name : NOMBRE_COOKIE,
       secret : process.env.SESSION_SECRET || 'secreto-solo-para-la-demo',
       store : almacen,
-      resave : false,
+      resave : false, 
       saveUninitialized : false, //no crea la sesion ni la cookie
       rolling : config.rolling,
       cookie : {
-        maxAge: config.maxAge || 1000*60*60*24,
+        maxAge: config.maxAgeMs || 1000 * 60 * 60 * 24,
         httpOnly: config.httpOnly,
         sameSite : config.sameSite,
         secure : false //activar el https
@@ -61,21 +60,12 @@ function crearApp(config, pool){
 
   //en el uso de middleware como existe el intercambio de la sesion para tener un seguimiento del usuario, rol, privilegio, etc, se utiliza el atributo roling para poder extener su uso
 
-  function requiereSesion(req, res, next){
-    return pendiente(1)(req, res, next);
-  }
-
-  function requiereRol(rol){
-    return pendiente(3);
-  }
-
   //cuando estemos utilizando un middleware verificar la sesión actividad a partir ya sea de la consulta al servidor o la cookie
   function vencida(sesion){
     const desde = config.rolling ? sesion.ultimoUso : sesion.creada;
-    return Date.now() - desde > config.maxAge;
+    return Date.now() - desde > (config.maxAgeMs || 1000 * 60 * 60 * 24);
   }
 
-  //tenemos que identicar quien entro
   function requiereSesion(req, res, next){
     if (req.session.usuario && vencida(req.session)){
       return req.session.destroy(() => {
@@ -100,11 +90,14 @@ function crearApp(config, pool){
   }
 
 
-  app.get('/api/config', (req, res) => res.json(config));
+  app.get('/api/config', (req, res) => {
+    const configPublica = { ...config };
+    delete configPublica.jwtSecreto;
+    res.json(configPublica);
+  });
 
   //vamos a generar un contador en la sesion, sirve para saver que la sesion existe antes de entrar
   app.post('/api/visita', (req, res) =>{
-    if(!req.session) return pendiente(1)(req, res);
     req.session.visitas = (req.session.visitas || 0)+1;
     res.json({visitas : req.session.visitas, sesion : idCorto(req.sessionID)});
   });
@@ -122,7 +115,7 @@ function crearApp(config, pool){
 
       //guardo la sesion
       const guardar = () =>{
-        req.session.datos = datos;
+        req.session.usuario = datos;
         req.session.visitas = visitas;
         req.session.creada = Date.now();
         req.session.ultimoUso = Date.now();
@@ -175,9 +168,9 @@ function crearApp(config, pool){
   app.get('/api/diagnostico/sesiones', async(req, res, next)=>{
     try{
       const sesiones = await todasLasSesiones(almacen);
-      const lista = Object.entries(sesiones || {}).map(([id], s) =>({
+      const lista = Object.entries(sesiones || {}).map(([id, s]) =>({
         sesion : idCorto(id),
-        esLaTuta : id === req.sessionID,
+        esLaTuya : id === req.sessionID,
         usuario : s.usuario ? s.usuario.usuario : '(sin iniciar sesion)',
         visitas: s.visitas || 0,
         expira: s.cookie && s.cookie.expires,
@@ -188,119 +181,139 @@ function crearApp(config, pool){
     }
   });
 
-  app.use('/api', (req, res)=> res.status(404).json({error: 'Ruta no encontrada'}))
-
-  app.use(express.static(path.join(__dirname, 'public')));
-
-  app.use((error, req, res, next)=>{
-    console.log('Ejercicio de sesiones');
-    console.error(error);
-    res.status(500).json({error: 'Error de servidor'});
-  });
-
-  return app;
+function firmarToken(usuario) {
+  return jwt.sign(
+    { sub: String(usuario.id), usuario: usuario.usuario, nombre: usuario.nombre, rol: usuario.rol },
+    secretoJWT,
+    {
+      algorithm: 'HS256',
+      expiresIn: config.jwtExpiraSeg || 900,
+      jwtid: crypto.randomUUID().replace(/-/g, ''),
+    },
+  );
 }
 
-
-//vamos a continuar con el jwt
-const SECRETO_JWT = config.jwtSecreto || process.env.JWT_SECRET || 'secreto-jwt-solo-para-la-demo';
-
-//vamos a crear el token de un usuario, con datos, (payload) + vencimiento + id unico y va a estar firmado con HS256 
-function firmarToken(usuario){
-  return jwt.sign(
-    {sub: String(usuario.id), usuario : usuario.usuario, nombre: usuario.nombre, rol: usuario.rol}, SECRETO_JWT, {algorithm: 'HS256', expiresIn: config.jwtExpiraSeg, jwtid: crypto.randomUUID()}
-  )
-
-  //para poder atender la petición con el middleware
-  async function requiereJWT(req, res, next) {
-    const encabezado = req.header.authorization || '';
-    if(!encabezado.startsWith('Bearer ')){
-      return res.status(401).json({error: '401. Falta el token para estar Autorizado'});
-    }
-    const token = encabezado.slice('Bearer'.length);
-
-    let datos;
-    try{
-      //debemos aceptar los datos de acuerdo al algoritmo
-      datos = jwt.verify(token, SECRETO_JWT, {algorithms: ['HS256']});
-    }catch(error){
-      if(error.name === 'TokenExpiredError'){
-        return res.status(401).json({error: '401 Token expirado por favor renuevalo o vuelve iniciar'});
-      } 
-      return res.status(401).json({error: '401 Token invalido'})
-    }
-    try{
-      if(config.jwtRevocar && (await crearModeloTokens.estaRevocado(datos.jti))){
-        return res.status(401).json({error: '401. Token revocado ya se cerro la sesión'})
-      }
-    }catch(error){
-      return next(error);
-    }
-
-    req.jwt = datos;
-    next();
-    
+async function requiereJWT(req, res, next) {
+  const coincidencia = /^Bearer\s+(.+)$/i.exec(req.get('Authorization') || '');
+  if (!coincidencia) {
+    return res.status(401).json({ error: 'Falta el token Bearer para autorizar la petición' });
   }
 
-  //funcion para verificar si el rol es valido con su token
-  function requiereRolJWT(rol){
-    return (req, res, next) => {
-      if(req.jwt.rol !== rol){
-        return res.status(403).json({error: `403 Eres ${req.jwt.usuario}, pero esta ruta no tienes el permiso para navegar de acuerdo a tu ${rol}`});
-      }
-      next();
-    };
+  let datos;
+  try {
+    datos = jwt.verify(coincidencia[1], secretoJWT, { algorithms: ['HS256'] });
+  } catch (error) {
+    const mensaje = error.name === 'TokenExpiredError'
+      ? 'Token expirado; inicia sesión nuevamente'
+      : 'Token inválido';
+    return res.status(401).json({ error: mensaje });
   }
 
-  //manejo de rutas con jwt
-
-  app.post('/api/jwt/login', async(req, res, next) =>{
-    try{
-      const {usuario, contrasena} = req.body || {};
-      const datos = await usuarios.verificar(usuario, contrasena);
-      if(!datos) return res.status(401).json({error: 'Usuario o contraseña incorrectos'});
-      res.json({token: firmarToken(datos), usuario: datos});
-
-    }catch(error){
-      next(error);
+  try {
+    if (config.jwtRevocar && await tokens.estaRevocado(datos.jti)) {
+      return res.status(401).json({ error: 'Token revocado; inicia sesión nuevamente' });
     }
+  } catch (error) {
+    return next(error);
+  }
+
+  req.jwt = datos;
+  return next();
+}
+
+function requiereRolJWT(rol) {
+  return (req, res, next) => {
+    if (req.jwt.rol !== rol) {
+      return res.status(403).json({ error: `El usuario ${req.jwt.usuario} no tiene el rol ${rol}` });
+    }
+    return next();
+  };
+}
+
+app.get('/api/jwt/revocados', requiereJWT, requiereRolJWT('admin'), async (req, res, next) => {
+  try {
+    const revocados = await tokens.listar();
+    return res.json({ tokens: revocados });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/jwt/login', async (req, res, next) => {
+  try {
+    const { usuario, contrasena } = req.body || {};
+    const datos = await usuarios.verificar(usuario, contrasena);
+    if (!datos) return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
+    return res.json({ token: firmarToken(datos), usuario: datos });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.get('/api/jwt/perfil', requiereJWT, (req, res) => {
+  const ahora = Math.floor(Date.now() / 1000);
+  return res.json({
+    mensaje: `Hola ${req.jwt.nombre}`,
+    usuario: {
+      id: req.jwt.sub,
+      usuario: req.jwt.usuario,
+      nombre: req.jwt.nombre,
+      rol: req.jwt.rol,
+    },
+    emitidoEn: new Date(req.jwt.iat * 1000).toISOString(),
+    expiraEn: new Date(req.jwt.exp * 1000).toISOString(),
+    expiraEnSegundos: Math.max(0, req.jwt.exp - ahora),
   });
+});
 
-  app.get('/api/jwt/perfil', requiereJWT, (req, res)=>{
-    res.json({
-      mensaje: `Hola ${req.jwt.nombre}`,
-      rol : req.jwt.rol, 
-      expiraEnSegundos : Math.max(0, req.jwt.exp - Math.floor(Date.now() / 1000))
+app.post('/api/jwt/refresh', requiereJWT, async (req, res, next) => {
+  try {
+    if (config.jwtRevocar) {
+      await tokens.revocar(req.jwt.jti, req.jwt.usuario, req.jwt.exp);
+    }
+    return res.json({
+      token: firmarToken({
+        id: req.jwt.sub,
+        usuario: req.jwt.usuario,
+        nombre: req.jwt.nombre,
+        rol: req.jwt.rol,
+      }),
     });
-  });
+  } catch (error) {
+    return next(error);
+  }
+});
 
-  //ejemplo de revocación de de un token todavia valido
-  app.post('/api/jwt/refresh', requiereJWT, (req, res) => {
-    const {sub, usuario, nombre, rol} = req.jwt;
-    res.json({token: firmarToken({id : sub, usuario, nombre, rol})});
-  })
+app.get('/api/jwt/reporte', requiereJWT, requiereRolJWT('admin'), (req, res) => {
+  return res.json({ reporte: 'Talleres: 3' });
+});
 
-  app.get('/api/jwt/reporte', requiereJWT, requiereRolJWT('admin'), (req, res)=>{
-    res.json({reporte: 'Talleres: 3'});
-  });
-
-  //que le pasa al token cuando logout
-  app.post('/api/jwt/logout', requiereJWT, async (req, res, next)=>{
-    try{
-      if(config.jwtRevocar){
-        await tokens.revocar(req.jwt.jti, req.jwt.usuario, req.jwt.exp);
-        res.json({mensaje: 'Token revocado en el servidor, se anota en la lista negra', revocado:true}); 
-      }
-      res.json({mensaje : 'El servidor no guarda nada, solo se puede borrar el token desde el navegador', revocado: false});
-    }catch(error){
-      next(error);
+app.post('/api/jwt/logout', requiereJWT, async (req, res, next) => {
+  try {
+    if (config.jwtRevocar) {
+      await tokens.revocar(req.jwt.jti, req.jwt.usuario, req.jwt.exp);
     }
-  })
+    return res.json({
+      mensaje: config.jwtRevocar
+        ? 'Token revocado en el servidor'
+        : 'El servidor no guarda sesiones; elimina el token del cliente',
+      revocado: Boolean(config.jwtRevocar),
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
 
+app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
+app.use(express.static(path.join(__dirname, 'public')));
 
+app.use((error, req, res, next) => {
+  console.log('Ejercicio de sesiones');
+  console.error(error);
+  res.status(500).json({ error: 'Error de servidor' });
+});
 
-
-
+return app;
 }
 
 module.exports = {crearApp, NOMBRE_COOKIE};

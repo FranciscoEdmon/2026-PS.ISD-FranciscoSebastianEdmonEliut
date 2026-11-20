@@ -147,6 +147,69 @@ async function filasDeSesion(usuario) {
     return r.status === 200;
   });
 
+  await prueba('JWT: token Bearer autentica perfil, controla el rol y no crea cookie de sesión', async () => {
+    const sinToken = await fetch(`${url}/api/jwt/perfil`);
+    const loginAlumno = await fetch(`${url}/api/jwt/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: 'ana', contrasena: 'ana12345' }),
+    });
+    const alumno = await loginAlumno.json();
+    const perfil = await fetch(`${url}/api/jwt/perfil`, {
+      headers: { Authorization: `Bearer ${alumno.token}` },
+    });
+    const datosPerfil = await perfil.json();
+    const renovar = await fetch(`${url}/api/jwt/refresh`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${alumno.token}` },
+    });
+    const tokenRenovado = await renovar.json();
+    const tokenAnterior = await fetch(`${url}/api/jwt/perfil`, {
+      headers: { Authorization: `Bearer ${alumno.token}` },
+    });
+    const reporteAlumno = await fetch(`${url}/api/jwt/reporte`, {
+      headers: { Authorization: `Bearer ${tokenRenovado.token}` },
+    });
+    const loginAdmin = await fetch(`${url}/api/jwt/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario: 'admin', contrasena: 'admin12345' }),
+    });
+    const admin = await loginAdmin.json();
+    const reporteAdmin = await fetch(`${url}/api/jwt/reporte`, {
+      headers: { Authorization: `Bearer ${admin.token}` },
+    });
+    const listaRevocados = await fetch(`${url}/api/jwt/revocados`, {
+      headers: { Authorization: `Bearer ${admin.token}` },
+    });
+    const datosRevocados = await listaRevocados.json();
+    const logoutAdmin = await fetch(`${url}/api/jwt/logout`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${admin.token}` },
+    });
+    const tokenCerrado = await fetch(`${url}/api/jwt/reporte`, {
+      headers: { Authorization: `Bearer ${admin.token}` },
+    });
+
+    return sinToken.status === 401
+      && loginAlumno.status === 200
+      && !loginAlumno.headers.get('set-cookie')
+      && perfil.status === 200
+      && datosPerfil.usuario.usuario === 'ana'
+      && Number.isFinite(datosPerfil.expiraEnSegundos)
+      && renovar.status === 200
+      && tokenRenovado.token !== alumno.token
+      && tokenAnterior.status === 401
+      && reporteAlumno.status === 403
+      && reporteAdmin.status === 200
+      && listaRevocados.status === 200
+      && datosRevocados.tokens.some((token) => token.usuario === 'ana')
+      && datosRevocados.tokens.every((token) => !Object.prototype.hasOwnProperty.call(token, 'token'))
+      && logoutAdmin.status === 200
+      && logoutAdmin.headers.get('set-cookie') === null
+      && tokenCerrado.status === 401;
+  });
+
   await prueba('Secuestro: otro navegador con la cookie copiada entra sin contraseña', async () => {
     const victima = navegador(url);
     await victima.pedir('POST', '/api/login', { usuario: 'ana', contrasena: 'ana12345' });

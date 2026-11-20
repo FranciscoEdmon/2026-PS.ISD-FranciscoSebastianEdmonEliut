@@ -1,5 +1,6 @@
 function crearModeloTokens(pool) {
   async function revocar(jti, usuario, exp) {
+    await pool.query('DELETE FROM tokens_revocados WHERE expira <= NOW()');
     await pool.query(
       'INSERT IGNORE INTO tokens_revocados (jti, usuario, expira) VALUES (?, ?, FROM_UNIXTIME(?))',
       [jti, usuario, exp],

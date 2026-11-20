@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Demo de sesiones</title>
+  <title>Demo de sesiones y JWT</title>
   <link rel="stylesheet" href="estilos.css">
 </head>
 <body>
   <header>
-    <h1>Demo de sesiones · CECyT 9</h1>
+    <h1>Demo de sesiones y JWT · CECyT 9</h1>
     <p>Abre <strong>F12</strong> y ten a la mano las pestañas <strong>Network</strong> (Red) y <strong>Application</strong> (Aplicación → Cookies).</p>
   </header>
 
@@ -37,6 +37,42 @@
         <button type="submit">Entrar</button>
       </form>
       <p class="detalle">Los usuarios están en la tabla <code>usuarios</code> de MySQL. Contraseñas: <code>ana12345</code>, <code>luis12345</code> y <code>admin12345</code>.</p>
+    </section>
+
+    <section class="tarjeta" id="tarjeta-jwt">
+      <h2>JWT · Token de acceso</h2>
+      <p class="detalle">Inicia sesión con JWT, observa el token y úsalo como <code>Authorization: Bearer</code>. A diferencia de la cookie, el servidor no guarda una sesión para cada token; al renovar o cerrar sesión, el token anterior queda en la lista negra hasta que expire.</p>
+      <form id="form-jwt-login">
+        <label>Usuario
+          <select id="jwt-usuario">
+            <option value="ana">ana (alumno)</option>
+            <option value="luis">luis (alumno)</option>
+            <option value="admin">admin (administrador)</option>
+          </select>
+        </label>
+        <label>Contraseña
+          <input id="jwt-contrasena" type="password" value="ana12345" autocomplete="off">
+        </label>
+        <button type="submit">Obtener token</button>
+      </form>
+      <p id="jwt-estado" class="estado sin-sesion">Sin token</p>
+      <label>Token JWT
+        <textarea id="token-jwt" rows="4" readonly placeholder="El token aparecerá aquí después de iniciar sesión"></textarea>
+      </label>
+      <p id="jwt-perfil" class="detalle">Inicia sesión para consultar el usuario y el vencimiento del token.</p>
+      <div class="botones">
+        <button type="button" data-jwt-metodo="GET" data-jwt-url="/api/jwt/perfil">GET perfil JWT</button>
+        <button type="button" data-jwt-metodo="GET" data-jwt-url="/api/jwt/reporte">GET reporte admin JWT</button>
+        <button type="button" data-jwt-metodo="POST" data-jwt-url="/api/jwt/refresh">POST renovar token</button>
+        <button type="button" data-jwt-metodo="POST" data-jwt-url="/api/jwt/logout" class="peligro">POST cerrar JWT</button>
+      </div>
+      <h3>Tokens revocados (solo administrador)</h3>
+      <p class="detalle">Se muestra el identificador <code>jti</code> guardado en la lista negra, no el token JWT completo.</p>
+      <button id="btn-tokens-revocados" type="button">Mostrar lista negra</button>
+      <table>
+        <thead><tr><th>JTI</th><th>Usuario</th><th>Expira</th><th>Revocado</th></tr></thead>
+        <tbody id="tabla-tokens-revocados"><tr><td colspan="4">(sin consultar)</td></tr></tbody>
+      </table>
     </section>
 
     <section class="tarjeta">
